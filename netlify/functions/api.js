@@ -1,4 +1,4 @@
-import { getStore } from '@netlify/blobs';
+import { getStore, connectLambda } from '@netlify/blobs';
 
 const STORE_NAME = 'turnero-repuestos-db';
 const STATE_KEY = 'state';
@@ -125,6 +125,7 @@ function visibleTicket(t) {
 }
 
 export async function handler(event) {
+  connectLambda(event);
   const action = event.queryStringParameters?.action || '';
   const method = event.httpMethod;
 

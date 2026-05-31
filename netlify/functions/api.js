@@ -237,6 +237,22 @@ export async function handler(event) {
       return json(200, { user: { ...newUser, password: undefined } });
     }
 
+
+    if (action === 'update-user-password' && method === 'POST') {
+      const slug = body.slug || user.storeSlug;
+      storeForUser(state, slug, user);
+      requireRole(user, ['super_admin', 'admin_casa']);
+      const target = state.users.find(u => u.id === body.userId && u.storeSlug === slug && u.active !== false);
+      if (!target) return json(404, { error: 'Usuario no encontrado' });
+      if (target.role !== 'vendedor') return json(403, { error: 'Solo se puede cambiar la clave de vendedores desde este panel' });
+      const password = String(body.password || '').trim();
+      if (password.length < 3) return json(400, { error: 'La contraseña debe tener al menos 3 caracteres' });
+      target.password = password;
+      target.updatedAt = now();
+      await saveState(state);
+      return json(200, { ok: true, user: { ...target, password: undefined } });
+    }
+
     if (action === 'tickets' && method === 'GET') {
       const slug = event.queryStringParameters?.slug || user.storeSlug;
       storeForUser(state, slug, user);

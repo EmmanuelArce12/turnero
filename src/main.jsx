@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import QRCode from 'qrcode';
-import { LogOut, Plus, Monitor, QrCode, Users, Store, Megaphone, CheckCircle2, RotateCcw, SkipForward, Download, Copy, ExternalLink, Maximize2, Wrench, User, Shield, Sparkles } from 'lucide-react';
+import { LogOut, Plus, Monitor, QrCode, Users, Store, Megaphone, CheckCircle2, RotateCcw, SkipForward, Download, Copy, ExternalLink, Maximize2, Wrench, User, Shield, Sparkles, Eye, EyeOff, KeyRound, Printer } from 'lucide-react';
 import { api, setToken, clearToken, getToken, ticketLabel, statusLabel } from './lib/api.js';
 import './styles.css';
 
@@ -32,7 +32,7 @@ function Layout({ children, user, nav, title }) {
       {user && <div className="userbox"><Shield size={18}/><div><b>{user.name}</b><span>{user.role === 'super_admin' ? 'Super usuario' : user.role === 'admin_casa' ? 'Administrador' : 'Vendedor'}</span></div></div>}
       <nav>
         {user?.role === 'super_admin' && <button onClick={() => nav('/super')}><Store size={18}/> Casas</button>}
-        {user?.storeSlug && <button onClick={() => nav(`/admin/${user.storeSlug}`)}><Users size={18}/> Administración</button>}
+        {user?.storeSlug && user.role !== 'vendedor' && <button onClick={() => nav(`/admin/${user.storeSlug}`)}><Users size={18}/> Administración</button>}
         {user?.storeSlug && <button onClick={() => nav(`/panel/${user.storeSlug}`)}><Megaphone size={18}/> Panel vendedor</button>}
         {user?.storeSlug && <button onClick={() => window.open(`/tv/${user.storeSlug}`, '_blank')}><Monitor size={18}/> Abrir TV</button>}
       </nav>
@@ -45,6 +45,7 @@ function Layout({ children, user, nav, title }) {
 function Login({ nav, onUser }) {
   const [form, setForm] = useState({ username: 'super', password: 'super123' });
   const [err, setErr] = useState('');
+  const [showPass, setShowPass] = useState(false);
   async function submit(e) {
     e.preventDefault(); setErr('');
     try {
@@ -58,7 +59,7 @@ function Login({ nav, onUser }) {
     <div className="login-hero"><Sparkles/><h1>Turnero Repuestos</h1><p>Elegante, rápido y listo para QR, vendedores y TV.</p></div>
     <Card className="login-card"><h2>Ingresar</h2><p className="muted">Usuario inicial: <b>super</b> / clave: <b>super123</b></p><form onSubmit={submit} className="form">
       <label>Usuario<Input value={form.username} onChange={e=>setForm({...form, username:e.target.value})}/></label>
-      <label>Contraseña<Input type="password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})}/></label>
+      <label>Contraseña<div className="password-wrap"><Input type={showPass ? 'text' : 'password'} value={form.password} onChange={e=>setForm({...form, password:e.target.value})}/><button type="button" className="eye-btn" onClick={()=>setShowPass(!showPass)} aria-label={showPass ? 'Ocultar contraseña' : 'Ver contraseña'}>{showPass ? <EyeOff size={20}/> : <Eye size={20}/>}</button></div></label>
       {err && <div className="error">{err}</div>}<Button>Entrar</Button>
     </form></Card>
   </div>
@@ -93,6 +94,30 @@ function QRCard({ store }) {
   return <Card className="qr-card"><h2><QrCode/> QR propio</h2>{qr && <img src={qr} alt="QR"/>}<p className="linkline">{store.qrUrl}</p><div className="actions"><Button onClick={download}><Download size={17}/> Descargar PNG</Button><Button variant="secondary" onClick={copy}><Copy size={17}/> Copiar link</Button><Button variant="ghost" onClick={()=>window.open(store.qrUrl,'_blank')}><ExternalLink size={17}/> Probar</Button></div></Card>
 }
 
+
+function VendorPasswordEditor({ vendor, slug, onSaved }) {
+  const [password, setPassword] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    if (!password.trim()) return alert('Ingresá una nueva contraseña');
+    setBusy(true);
+    try {
+      await api('update-user-password', { method: 'POST', body: { slug, userId: vendor.id, password } });
+      setPassword('');
+      onSaved?.('Contraseña actualizada');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <div className="inline-password">
+    <div className="password-wrap mini"><Input type={show ? 'text' : 'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Nueva clave"/><button type="button" className="eye-btn" onClick={()=>setShow(!show)}>{show ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
+    <Button variant="secondary" className="small-btn" disabled={busy} onClick={save}><KeyRound size={16}/> Cambiar</Button>
+  </div>
+}
+
 function AdminCasa({ user, nav, slug }) {
   const [data, setData] = useState(null); const [toast,setToast]=useState('');
   const [vendor,setVendor]=useState({username:'',password:'',name:'',puesto:'A'});
@@ -110,7 +135,7 @@ function AdminCasa({ user, nav, slug }) {
       <label>Puesto<Select value={vendor.puesto} onChange={e=>setVendor({...vendor,puesto:e.target.value})}>{store.puestos.map(p=><option key={p}>{p}</option>)}</Select></label>
       <Button><Plus size={17}/> Crear vendedor</Button>
     </form></Card></div>
-    <div className="grid two"><Card><h2>Usuarios de esta casa</h2><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Puesto</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.name}</td><td>{u.username}</td><td>{u.role}</td><td>{u.puesto||'-'}</td></tr>)}</tbody></table></Card>
+    <div className="grid two"><Card><h2>Usuarios de esta casa</h2><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Puesto</th><th>Clave</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.name}</td><td>{u.username}</td><td>{u.role}</td><td>{u.puesto||'-'}</td><td>{u.role === 'vendedor' ? <VendorPasswordEditor vendor={u} slug={slug} onSaved={(m)=>setToast(m)} /> : <span className="muted">-</span>}</td></tr>)}</tbody></table></Card>
     <Card><h2>Accesos rápidos</h2><div className="big-actions"><Button onClick={()=>nav(`/panel/${slug}`)}><Megaphone/> Panel vendedor</Button><Button variant="secondary" onClick={()=>window.open(`/tv/${slug}`,'_blank')}><Monitor/> Pantalla TV</Button><Button variant="danger" onClick={reset}><RotateCcw/> Reiniciar día</Button></div></Card></div>
   </Layout>
 }
@@ -133,7 +158,7 @@ function PanelVendedor({ user, nav, slug }) {
     <div className="toolbar"><div><b>{store?.name}</b><span> Puesto </span><Select value={puesto} onChange={e=>setPuesto(e.target.value)}>{(store?.puestos||['A']).map(p=><option key={p}>{p}</option>)}</Select></div><Button variant="secondary" onClick={openFloating}><Maximize2 size={17}/> Modo flotante</Button></div>
     <div className="grid three"><Card className="metric"><b>{pending.length}</b><span>Pendientes</span></Card><Card className="metric"><b>{called.length}</b><span>Llamados</span></Card><Card className="metric"><b>{tickets.filter(t=>t.status==='atendido').length}</b><span>Atendidos</span></Card></div>
     <div className="hero-call"><Button className="call-btn" onClick={()=>action('call-next')}><Megaphone/> LLAMAR SIGUIENTE</Button></div>
-    <div className="grid two"><Card><h2>Turnos pendientes</h2><TicketList tickets={pending} actions={false}/></Card><Card><h2>Últimos llamados</h2><TicketList tickets={called} onFinish={t=>action('finish-ticket',{ticketId:t.id})} onSkip={t=>action('skip-ticket',{ticketId:t.id})} onRecall={t=>action('recall',{ticketId:t.id})}/></Card></div>
+    <div className="grid vendor-work"><Card><h2>Turnos pendientes</h2><TicketList tickets={pending} actions={false}/></Card><Card><h2>Últimos llamados</h2><TicketList tickets={called} onFinish={t=>action('finish-ticket',{ticketId:t.id})} onSkip={t=>action('skip-ticket',{ticketId:t.id})} onRecall={t=>action('recall',{ticketId:t.id})}/></Card>{store && <QRCard store={store}/>}</div>
   </Layout>
 }
 
@@ -159,7 +184,7 @@ function App(){ const [path,nav]=usePath(); const [user,setUser]=useState(null);
   if(path==='/' || path==='/login') return <Login nav={nav} onUser={setUser}/>;
   if(!user) return <Login nav={nav} onUser={setUser}/>;
   if(parts[0]==='super') return <SuperAdmin user={user} nav={nav}/>;
-  if(parts[0]==='admin' && parts[1]) return <AdminCasa user={user} nav={nav} slug={parts[1]}/>;
+  if(parts[0]==='admin' && parts[1]) { if(user.role === 'vendedor') return <PanelVendedor user={user} nav={nav} slug={parts[1]}/>; return <AdminCasa user={user} nav={nav} slug={parts[1]}/>; }
   if(parts[0]==='panel' && parts[1]) return <PanelVendedor user={user} nav={nav} slug={parts[1]}/>;
   return <Login nav={nav} onUser={setUser}/>;
 }

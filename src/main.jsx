@@ -22,6 +22,15 @@ function Button({ children, variant = 'primary', className = '', ...props }) {
 function Card({ children, className = '' }) { return <div className={`card ${className}`}>{children}</div>; }
 function Input(props) { return <input className="input" {...props} />; }
 function Select(props) { return <select className="input" {...props} />; }
+function PasswordInput({ value, onChange, placeholder = '', required = false, autoComplete = 'current-password' }) {
+  const [show, setShow] = useState(false);
+  return <div className="password-wrap">
+    <Input type={show ? 'text' : 'password'} value={value} onChange={onChange} placeholder={placeholder} required={required} autoComplete={autoComplete}/>
+    <button type="button" className="eye-btn" onClick={() => setShow(!show)} title={show ? 'Ocultar contraseña' : 'Ver contraseña'} aria-label={show ? 'Ocultar contraseña' : 'Ver contraseña'}>
+      {show ? <EyeOff size={20}/> : <Eye size={20}/>}
+    </button>
+  </div>
+}
 function Pill({ children, tone = 'dark' }) { return <span className={`pill ${tone}`}>{children}</span>; }
 function Toast({ msg }) { return msg ? <div className="toast">{msg}</div> : null; }
 
@@ -45,7 +54,6 @@ function Layout({ children, user, nav, title }) {
 function Login({ nav, onUser }) {
   const [form, setForm] = useState({ username: 'super', password: 'super123' });
   const [err, setErr] = useState('');
-  const [showPass, setShowPass] = useState(false);
   async function submit(e) {
     e.preventDefault(); setErr('');
     try {
@@ -59,7 +67,7 @@ function Login({ nav, onUser }) {
     <div className="login-hero"><Sparkles/><h1>Turnero Repuestos</h1><p>Elegante, rápido y listo para QR, vendedores y TV.</p></div>
     <Card className="login-card"><h2>Ingresar</h2><p className="muted">Usuario inicial: <b>super</b> / clave: <b>super123</b></p><form onSubmit={submit} className="form">
       <label>Usuario<Input value={form.username} onChange={e=>setForm({...form, username:e.target.value})}/></label>
-      <label>Contraseña<div className="password-wrap"><Input type={showPass ? 'text' : 'password'} value={form.password} onChange={e=>setForm({...form, password:e.target.value})}/><button type="button" className="eye-btn" onClick={()=>setShowPass(!showPass)} aria-label={showPass ? 'Ocultar contraseña' : 'Ver contraseña'}>{showPass ? <EyeOff size={20}/> : <Eye size={20}/>}</button></div></label>
+      <label>Contraseña<PasswordInput value={form.password} onChange={e=>setForm({...form, password:e.target.value})}/></label>
       {err && <div className="error">{err}</div>}<Button>Entrar</Button>
     </form></Card>
   </div>
@@ -76,7 +84,7 @@ function SuperAdmin({ user, nav }) {
       <label>Nombre de la casa<Input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ej: Repuestos Centro" required/></label>
       <label>Dirección<Input value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></label>
       <label>Usuario administrador<Input value={form.adminUsername} onChange={e=>setForm({...form,adminUsername:e.target.value})} placeholder="centro_admin"/></label>
-      <label>Contraseña administrador<Input value={form.adminPassword} onChange={e=>setForm({...form,adminPassword:e.target.value})} placeholder="dejá vacío para sugerida"/></label>
+      <label>Contraseña administrador<PasswordInput value={form.adminPassword} onChange={e=>setForm({...form,adminPassword:e.target.value})} placeholder="dejá vacío para sugerida" autoComplete="new-password"/></label>
       <label>Puestos<Input value={form.puestos} onChange={e=>setForm({...form,puestos:e.target.value})} placeholder="A,B,C"/></label>
       <Button><Store size={18}/> Crear estructura completa</Button>
     </form></Card>
@@ -113,7 +121,7 @@ function VendorPasswordEditor({ vendor, slug, onSaved }) {
     }
   }
   return <div className="inline-password">
-    <div className="password-wrap mini"><Input type={show ? 'text' : 'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Nueva clave"/><button type="button" className="eye-btn" onClick={()=>setShow(!show)}>{show ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
+    <div className="mini-pass"><PasswordInput value={password} onChange={e=>setPassword(e.target.value)} placeholder="Nueva clave" autoComplete="new-password"/></div>
     <Button variant="secondary" className="small-btn" disabled={busy} onClick={save}><KeyRound size={16}/> Cambiar</Button>
   </div>
 }
@@ -131,12 +139,13 @@ function AdminCasa({ user, nav, slug }) {
     <div className="grid two"><QRCard store={store}/><Card><h2><Users/> Crear vendedor</h2><form className="form" onSubmit={addVendor}>
       <label>Nombre<Input value={vendor.name} onChange={e=>setVendor({...vendor,name:e.target.value})} placeholder="Ej: Rubén"/></label>
       <label>Usuario<Input value={vendor.username} onChange={e=>setVendor({...vendor,username:e.target.value})} required/></label>
-      <label>Contraseña<Input value={vendor.password} onChange={e=>setVendor({...vendor,password:e.target.value})} required/></label>
+      <label>Contraseña<PasswordInput value={vendor.password} onChange={e=>setVendor({...vendor,password:e.target.value})} required autoComplete="new-password"/></label>
       <label>Puesto<Select value={vendor.puesto} onChange={e=>setVendor({...vendor,puesto:e.target.value})}>{store.puestos.map(p=><option key={p}>{p}</option>)}</Select></label>
       <Button><Plus size={17}/> Crear vendedor</Button>
     </form></Card></div>
-    <div className="grid two"><Card><h2>Usuarios de esta casa</h2><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Puesto</th><th>Clave</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.name}</td><td>{u.username}</td><td>{u.role}</td><td>{u.puesto||'-'}</td><td>{u.role === 'vendedor' ? <VendorPasswordEditor vendor={u} slug={slug} onSaved={(m)=>setToast(m)} /> : <span className="muted">-</span>}</td></tr>)}</tbody></table></Card>
-    <Card><h2>Accesos rápidos</h2><div className="big-actions"><Button onClick={()=>nav(`/panel/${slug}`)}><Megaphone/> Panel vendedor</Button><Button variant="secondary" onClick={()=>window.open(`/tv/${slug}`,'_blank')}><Monitor/> Pantalla TV</Button><Button variant="danger" onClick={reset}><RotateCcw/> Reiniciar día</Button></div></Card></div>
+    <div className="grid two"><Card><h2>Usuarios de esta casa</h2><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Puesto</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.name}</td><td>{u.username}</td><td>{u.role}</td><td>{u.puesto||'-'}</td></tr>)}</tbody></table></Card>
+    <Card><h2><KeyRound/> Cambiar clave de vendedores</h2><p className="muted">El administrador puede modificar la contraseña de cada vendedor desde acá.</p><div className="password-list">{users.filter(u=>u.role==='vendedor').map(u=><div className="password-row" key={u.id}><div><b>{u.name}</b><span>{u.username} · Puesto {u.puesto || '-'}</span></div><VendorPasswordEditor vendor={u} slug={slug} onSaved={(m)=>setToast(m)} /></div>)}{!users.some(u=>u.role==='vendedor') && <p className="muted">Todavía no hay vendedores creados.</p>}</div></Card></div>
+    <Card><h2>Accesos rápidos</h2><div className="big-actions"><Button onClick={()=>nav(`/panel/${slug}`)}><Megaphone/> Panel vendedor</Button><Button variant="secondary" onClick={()=>window.open(`/tv/${slug}`,'_blank')}><Monitor/> Pantalla TV</Button><Button variant="danger" onClick={reset}><RotateCcw/> Reiniciar día</Button></div></Card>
   </Layout>
 }
 

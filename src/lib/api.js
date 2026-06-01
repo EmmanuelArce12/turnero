@@ -16,7 +16,7 @@ export async function api(action, options = {}) {
   return data;
 }
 
-export function ticketLabel(type) { return type === 'mecanico' ? 'Mecánico' : 'Particular'; }
+export function ticketLabel(type) { return type === 'mecanico' ? 'Mecánico' : type === 'retiro' ? 'Retiro' : 'Particular'; }
 export function statusLabel(status) {
   return { pendiente: 'Pendiente', llamado: 'Llamado', atendido: 'Atendido', saltado: 'Saltado' }[status] || status;
 }

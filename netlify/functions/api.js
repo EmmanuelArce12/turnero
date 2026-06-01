@@ -107,6 +107,17 @@ function storeForUser(state, slug, user) {
   return store;
 }
 
+function markPreviousCalledAsAttended(state, slug, user, puesto) {
+  const previous = state.tickets
+    .filter(t => t.storeSlug === slug && t.date === today() && t.status === 'llamado' && t.vendorId === user.id && String(t.puesto || '').toUpperCase() === String(puesto || '').toUpperCase())
+    .sort((a, b) => (b.calledAt || '').localeCompare(a.calledAt || ''))[0];
+  if (previous) {
+    previous.status = 'atendido';
+    previous.finishedAt = now();
+  }
+  return previous;
+}
+
 function visibleTicket(t) {
   return {
     id: t.id,
@@ -161,7 +172,8 @@ export async function handler(event) {
 
     if (action === 'take-ticket' && method === 'POST') {
       const slug = String(body.slug || '').trim();
-      const type = body.type === 'mecanico' ? 'mecanico' : 'particular';
+      const requestedType = String(body.type || 'particular').toLowerCase();
+      const type = ['particular', 'mecanico', 'retiro'].includes(requestedType) ? requestedType : 'particular';
       const name = String(body.name || '').trim().slice(0, 50);
       if (!name) return json(400, { error: 'Ingresá un nombre' });
       const store = state.stores.find(s => s.slug === slug && s.active !== false);
@@ -170,11 +182,13 @@ export async function handler(event) {
         store.lastResetDate = today();
         store.counterParticular = 0;
         store.counterMecanico = 0;
+        store.counterRetiro = 0;
       }
-      const field = type === 'mecanico' ? 'counterMecanico' : 'counterParticular';
+      const field = type === 'mecanico' ? 'counterMecanico' : type === 'retiro' ? 'counterRetiro' : 'counterParticular';
       store[field] = Number(store[field] || 0) + 1;
       const number = store[field];
-      const code = `${type === 'mecanico' ? 'M' : 'P'}-${String(number).padStart(3, '0')}`;
+      const prefix = type === 'mecanico' ? 'M' : type === 'retiro' ? 'R' : 'P';
+      const code = `${prefix}-${String(number).padStart(3, '0')}`;
       const ticket = { id: id('ticket'), storeSlug: slug, date: today(), code, number, name, type, status: 'pendiente', puesto: null, vendorId: null, vendorName: null, createdAt: now(), calledAt: null, finishedAt: null };
       state.tickets.push(ticket);
       await saveState(state);
@@ -205,7 +219,7 @@ export async function handler(event) {
       const adminUsername = String(body.adminUsername || `${slug}_admin`).trim().toLowerCase();
       const adminPassword = String(body.adminPassword || Math.random().toString(36).slice(2, 10)).trim();
       if (state.users.some(u => u.username.toLowerCase() === adminUsername.toLowerCase())) return json(400, { error: 'Ese usuario admin ya existe' });
-      const store = { id: id('store'), name, slug, address: String(body.address || '').trim(), active: true, puestos, counterParticular: 0, counterMecanico: 0, lastResetDate: today(), theme: { accent: body.accent || '#111827' }, createdAt: now() };
+      const store = { id: id('store'), name, slug, address: String(body.address || '').trim(), active: true, puestos, counterParticular: 0, counterMecanico: 0, counterRetiro: 0, lastResetDate: today(), theme: { accent: body.accent || '#111827' }, createdAt: now() };
       state.stores.push(store);
       state.users.push({ id: id('user'), username: adminUsername, password: adminPassword, name: `Administrador ${name}`, role: 'admin_casa', storeSlug: slug, active: true, puesto: puestos[0] || 'A', createdAt: now() });
       await saveState(state);
@@ -265,15 +279,37 @@ export async function handler(event) {
       const store = storeForUser(state, slug, user);
       requireRole(user, ['super_admin', 'admin_casa', 'vendedor']);
       const puesto = String(body.puesto || user.puesto || store.puestos[0] || 'A').trim().toUpperCase();
-      const ticket = state.tickets.filter(t => t.storeSlug === slug && t.date === today() && t.status === 'pendiente').sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-      if (!ticket) return json(404, { error: 'No hay turnos pendientes' });
+      const previous = markPreviousCalledAsAttended(state, slug, user, puesto);
+      const ticket = state.tickets
+        .filter(t => t.storeSlug === slug && t.date === today() && t.status === 'pendiente' && t.type !== 'retiro')
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      if (!ticket) return json(404, { error: 'No hay turnos pendientes de mostrador' });
       ticket.status = 'llamado';
       ticket.puesto = puesto;
       ticket.vendorId = user.id;
       ticket.vendorName = user.name;
       ticket.calledAt = now();
       await saveState(state);
-      return json(200, { ticket: visibleTicket(ticket) });
+      return json(200, { ticket: visibleTicket(ticket), previousAttended: previous ? visibleTicket(previous) : null });
+    }
+
+    if (action === 'call-pickup' && method === 'POST') {
+      const slug = body.slug || user.storeSlug;
+      const store = storeForUser(state, slug, user);
+      requireRole(user, ['super_admin', 'admin_casa', 'vendedor']);
+      const puesto = String(body.puesto || user.puesto || store.puestos[0] || 'A').trim().toUpperCase();
+      const previous = markPreviousCalledAsAttended(state, slug, user, puesto);
+      const ticket = state.tickets
+        .filter(t => t.storeSlug === slug && t.date === today() && t.status === 'pendiente' && t.type === 'retiro')
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      if (!ticket) return json(404, { error: 'No hay retiros pendientes' });
+      ticket.status = 'llamado';
+      ticket.puesto = puesto;
+      ticket.vendorId = user.id;
+      ticket.vendorName = user.name;
+      ticket.calledAt = now();
+      await saveState(state);
+      return json(200, { ticket: visibleTicket(ticket), previousAttended: previous ? visibleTicket(previous) : null });
     }
 
     if (action === 'recall' && method === 'POST') {
@@ -319,6 +355,7 @@ export async function handler(event) {
       requireRole(user, ['super_admin', 'admin_casa']);
       store.counterParticular = 0;
       store.counterMecanico = 0;
+      store.counterRetiro = 0;
       store.lastResetDate = today();
       state.tickets = state.tickets.filter(t => !(t.storeSlug === slug && t.date === today()));
       await saveState(state);

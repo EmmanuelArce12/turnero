@@ -162,6 +162,28 @@ function VendorPasswordEditor({ vendor, slug, onSaved }) {
 }
 
 
+function VendorPuestoEditor({ vendor, slug, puestos = [], onSaved }) {
+  const [puesto, setPuesto] = useState(vendor.puesto || puestos[0] || '');
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    if (!puesto) return alert('Seleccioná un puesto o caja');
+    setBusy(true);
+    try {
+      await api('update-vendor-puesto', { method: 'POST', body: { slug, userId: vendor.id, puesto } });
+      onSaved?.('Puesto por defecto actualizado');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <div className="inline-puesto-editor">
+    <Select value={puesto} onChange={e=>setPuesto(e.target.value)}>{puestos.map(p=><option key={p} value={p}>{p}</option>)}</Select>
+    <Button variant="secondary" className="small-btn" disabled={busy} onClick={save}>Guardar</Button>
+  </div>
+}
+
+
 function VoiceSettingsCard({ store, slug, onSaved }) {
   const saved = store?.voice || {};
   const [enabled, setEnabled] = useState(Boolean(saved.enabled));
@@ -238,7 +260,7 @@ function AdminCasa({ user, nav, slug }) {
       <Button><Plus size={17}/> Crear vendedor</Button>
     </form></Card></div>
     <div className="grid two"><Card><h2>Usuarios de esta casa</h2><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Puesto</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.name}</td><td>{u.username}</td><td>{u.role}</td><td>{u.puesto||'-'}</td></tr>)}</tbody></table></Card>
-    <Card><h2><KeyRound/> Cambiar clave de vendedores</h2><p className="muted">El administrador puede modificar la contraseña de cada vendedor desde acá.</p><div className="password-list">{users.filter(u=>u.role==='vendedor').map(u=><div className="password-row" key={u.id}><div><b>{u.name}</b><span>{u.username} · Puesto {u.puesto || '-'}</span></div><VendorPasswordEditor vendor={u} slug={slug} onSaved={(m)=>setToast(m)} /></div>)}{!users.some(u=>u.role==='vendedor') && <p className="muted">Todavía no hay vendedores creados.</p>}</div></Card></div>
+    <Card><h2><KeyRound/> Editar vendedores</h2><p className="muted">Desde acá podés cambiar la clave y el puesto/caja por defecto de cada vendedor. El vendedor igual puede cambiarlo momentáneamente desde su panel o desde la barra flotante.</p><div className="password-list">{users.filter(u=>u.role==='vendedor').map(u=><div className="password-row vendor-edit-row" key={u.id}><div><b>{u.name}</b><span>{u.username} · Puesto por defecto {u.puesto || '-'}</span></div><div className="vendor-edit-tools"><VendorPuestoEditor vendor={u} slug={slug} puestos={store.puestos || []} onSaved={async (m)=>{setToast(m); await load();}} /><VendorPasswordEditor vendor={u} slug={slug} onSaved={(m)=>setToast(m)} /></div></div>)}{!users.some(u=>u.role==='vendedor') && <p className="muted">Todavía no hay vendedores creados.</p>}</div></Card></div>
     <VoiceSettingsCard store={store} slug={slug} onSaved={(m)=>setToast(m)} />
     <Card><h2>Accesos rápidos</h2><div className="big-actions"><Button onClick={()=>nav(`/panel/${slug}`)}><Megaphone/> Panel vendedor</Button><Button variant="secondary" onClick={()=>window.open(`/tv/${slug}?voice=1`,'_blank')}><Monitor/> Abrir TV con voz</Button><Button variant="danger" onClick={reset}><RotateCcw/> Reiniciar día</Button></div></Card>
   </Layout>

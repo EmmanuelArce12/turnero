@@ -308,6 +308,24 @@ export async function handler(event) {
     }
 
 
+    if (action === 'update-vendor-puesto' && method === 'POST') {
+      const slug = body.slug || user.storeSlug;
+      const store = storeForUser(state, slug, user);
+      requireRole(user, ['super_admin', 'admin_casa']);
+      const target = state.users.find(u => u.id === body.userId && u.storeSlug === slug && u.active !== false);
+      if (!target) return json(404, { error: 'Usuario no encontrado' });
+      if (target.role !== 'vendedor') return json(403, { error: 'Solo se puede cambiar el puesto por defecto de vendedores desde este panel' });
+      const puesto = String(body.puesto || '').trim().toUpperCase();
+      if (!puesto) return json(400, { error: 'Seleccioná un puesto o caja' });
+      const puestos = (store.puestos || []).map(p => String(p).toUpperCase());
+      if (puestos.length && !puestos.includes(puesto)) return json(400, { error: 'Ese puesto no existe en esta casa' });
+      target.puesto = puesto;
+      target.updatedAt = now();
+      await saveState(state);
+      return json(200, { ok: true, user: { ...target, password: undefined } });
+    }
+
+
     if (action === 'update-voice-settings' && method === 'POST') {
       const slug = body.slug || user.storeSlug;
       const store = storeForUser(state, slug, user);

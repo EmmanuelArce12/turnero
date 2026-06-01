@@ -43,7 +43,7 @@ function Layout({ children, user, nav, title }) {
         {user?.role === 'super_admin' && <button onClick={() => nav('/super')}><Store size={18}/> Casas</button>}
         {user?.storeSlug && user.role !== 'vendedor' && <button onClick={() => nav(`/admin/${user.storeSlug}`)}><Users size={18}/> Administración</button>}
         {user?.storeSlug && <button onClick={() => nav(`/panel/${user.storeSlug}`)}><Megaphone size={18}/> Panel vendedor</button>}
-        {user?.storeSlug && <button onClick={() => window.open(`/tv/${user.storeSlug}`, '_blank')}><Monitor size={18}/> Abrir TV</button>}
+        {user?.storeSlug && <button onClick={() => window.open(`/tv/${user.storeSlug}?voice=1`, '_blank')}><Monitor size={18}/> Abrir TV</button>}
       </nav>
       {user && <Button variant="ghost" onClick={() => { clearToken(); nav('/login'); }}><LogOut size={17}/> Salir</Button>}
     </aside>
@@ -221,6 +221,7 @@ function VoiceSettingsCard({ store, slug, onSaved }) {
     utter.rate = rate;
     utter.pitch = pitch;
     utter.volume = 1;
+    try { window.speechSynthesis.resume(); } catch {}
     window.speechSynthesis.speak(utter);
   }
 
@@ -298,11 +299,34 @@ function TurnoCliente({ slug }) {
   return <div className="client-page"><Card className="client-card"><div className="client-logo"><Wrench/> {store?.name||'Turnero'}</div>{ticket ? <div className="ticket-result"><p>Tu turno es</p><h1>{ticket.code}</h1><h2>{ticket.name}</h2><Pill>{ticketLabel(ticket.type)}</Pill><p>Aguardá a ser llamado en pantalla.</p><Button variant="secondary" onClick={()=>{setTicket(null);setForm({name:'',type:'particular'})}}>Sacar otro turno</Button></div> : <><h1>Sacá tu turno</h1><p className="muted">Ingresá tu nombre y elegí el tipo de atención.</p><form className="form" onSubmit={submit}><label>Nombre<Input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Tu nombre, taller o pedido" required autoFocus/></label><div className="type-grid three"><button type="button" className={form.type==='particular'?'selected':''} onClick={()=>setForm({...form,type:'particular'})}><User/> Particular</button><button type="button" className={form.type==='mecanico'?'selected':''} onClick={()=>setForm({...form,type:'mecanico'})}><Wrench/> Mecánico</button><button type="button" className={form.type==='retiro'?'selected':''} onClick={()=>setForm({...form,type:'retiro'})}><Printer/> Retirar</button></div>{err&&<div className="error">{err}</div>}<Button>SACAR TURNO</Button></form></>}</Card></div>
 }
 
+
+function puestoToSpeech(puesto) {
+  const raw = String(puesto || '').trim();
+  if (!raw) return '';
+  const numberWords = {
+    '0': 'cero', '1': 'uno', '2': 'dos', '3': 'tres', '4': 'cuatro', '5': 'cinco',
+    '6': 'seis', '7': 'siete', '8': 'ocho', '9': 'nueve', '10': 'diez',
+    '11': 'once', '12': 'doce', '13': 'trece', '14': 'catorce', '15': 'quince',
+    '16': 'dieciséis', '17': 'diecisiete', '18': 'dieciocho', '19': 'diecinueve', '20': 'veinte'
+  };
+  const numericOnly = raw.match(/^\d+$/);
+  if (numericOnly) return `número ${numberWords[raw] || raw.split('').map(d => numberWords[d] || d).join(' ')}`;
+  return raw.replace(/\b(\d+)\b/g, (_, n) => `número ${numberWords[n] || n.split('').map(d => numberWords[d] || d).join(' ')}`);
+}
+
+function buildVoiceMessage(ticket) {
+  const nombre = String(ticket?.name || '').trim() || `turno ${ticket?.code || ''}`;
+  const puesto = puestoToSpeech(ticket?.puesto);
+  if (!puesto) return `${nombre}, acercarse al mostrador`;
+  return `${nombre}, acercarse al mostrador ${puesto}`;
+}
+
 function PantallaTV({ slug }) {
   const [data,setData]=useState({called:[],pending:[],lastCalled:null,store:null});
   const [time,setTime]=useState(new Date());
   const [voices,setVoices]=useState([]);
   const [audioUnlocked,setAudioUnlocked]=useState(new URLSearchParams(location.search).get('voice') === '1');
+  const [voiceProblem,setVoiceProblem]=useState('');
   const [overlay,setOverlay]=useState(null);
   const lastSpokenRef = useRef('');
 
@@ -337,7 +361,7 @@ function PantallaTV({ slug }) {
     lastSpokenRef.current = eventKey;
     setOverlay(last);
     const closeTimer=setTimeout(()=>setOverlay(null),7200);
-    if (data.store?.voice?.enabled && audioUnlocked) speakTicket(last);
+    if (data.store?.voice?.enabled) speakTicket(last);
     return()=>clearTimeout(closeTimer);
   },[data.lastCalled?.id, data.lastCalled?.calledAt, data.store?.voice?.enabled, audioUnlocked]);
 
@@ -345,8 +369,10 @@ function PantallaTV({ slug }) {
 
   function speakTicket(ticket){
     if (!('speechSynthesis' in window) || !ticket) return;
-    const msg = `${ticket.name}, acercarse al mostrador ${ticket.puesto || ''}`;
+    const msg = buildVoiceMessage(ticket);
+    setVoiceProblem('');
     window.speechSynthesis.cancel();
+    try { window.speechSynthesis.resume(); } catch {}
     const utter = new SpeechSynthesisUtterance(msg);
     const v = selectedVoice();
     if (v) utter.voice = v;
@@ -355,7 +381,16 @@ function PantallaTV({ slug }) {
     utter.rate = Number(cfg.rate || 0.88);
     utter.pitch = Number(cfg.pitch || 1.02);
     utter.volume = Number(cfg.volume || 1);
-    window.speechSynthesis.speak(utter);
+    try {
+      window.speechSynthesis.speak(utter);
+      setTimeout(() => {
+        if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+          setVoiceProblem('La TV bloqueó la voz. Abrí esta pantalla desde el botón Abrir TV con voz o tocá una vez la pantalla.');
+        }
+      }, 800);
+    } catch (err) {
+      setVoiceProblem('La TV no permitió reproducir la voz. Tocá una vez la pantalla y volvé a llamar.');
+    }
   }
 
 

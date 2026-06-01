@@ -12,6 +12,14 @@ Sistema web de turnos con:
 - Botón de modo flotante para llamar turnos mientras se usa otra ventana.
 - Netlify Functions + Netlify Blobs como almacenamiento simple.
 
+## Usuario inicial
+
+```txt
+Usuario: super
+Contraseña: super123
+```
+
+Cambiá esta clave antes de usarlo en producción.
 
 ## Instalar
 

@@ -204,7 +204,10 @@ export async function handler(event) {
     if (action === 'stores' && method === 'GET') {
       requireRole(user, ['super_admin']);
       const base = publicBaseUrl(event);
-      return json(200, { stores: state.stores.map(s => ({ ...s, qrUrl: `${base}/turno/${s.slug}` })) });
+      return json(200, { stores: state.stores.map(s => {
+        const admin = state.users.find(u => u.storeSlug === s.slug && u.role === 'admin_casa' && u.active !== false);
+        return { ...s, adminUsername: admin?.username || '', adminName: admin?.name || '', qrUrl: `${base}/turno/${s.slug}`, tvUrl: `${base}/tv/${s.slug}`, panelUrl: `${base}/admin/${s.slug}` };
+      }) });
     }
 
     if (action === 'create-store' && method === 'POST') {
@@ -225,6 +228,43 @@ export async function handler(event) {
       await saveState(state);
       const base = publicBaseUrl(event);
       return json(200, { store: { ...store, qrUrl: `${base}/turno/${slug}`, tvUrl: `${base}/tv/${slug}`, panelUrl: `${base}/admin/${slug}` }, admin: { username: adminUsername, password: adminPassword } });
+    }
+
+    if (action === 'update-store' && method === 'POST') {
+      requireRole(user, ['super_admin']);
+      const slug = String(body.slug || '').trim();
+      const store = state.stores.find(s => s.slug === slug && s.active !== false);
+      if (!store) return json(404, { error: 'Casa no encontrada' });
+      const name = String(body.name || '').trim();
+      if (!name) return json(400, { error: 'El nombre de la casa no puede quedar vacío' });
+      const puestos = String(body.puestos || '').split(',').map(p => p.trim().toUpperCase()).filter(Boolean);
+      if (!puestos.length) return json(400, { error: 'Ingresá al menos un mostrador o caja' });
+      store.name = name;
+      store.address = String(body.address || '').trim();
+      store.puestos = puestos;
+      store.updatedAt = now();
+      for (const u of state.users.filter(u => u.storeSlug === slug && u.active !== false)) {
+        if (u.puesto && !puestos.includes(String(u.puesto).toUpperCase())) u.puesto = puestos[0];
+      }
+      const admin = state.users.find(u => u.storeSlug === slug && u.role === 'admin_casa' && u.active !== false);
+      if (admin) {
+        const adminUsername = String(body.adminUsername || '').trim().toLowerCase();
+        if (adminUsername) {
+          const exists = state.users.some(u => u.id !== admin.id && u.username.toLowerCase() === adminUsername.toLowerCase());
+          if (exists) return json(400, { error: 'Ese usuario administrador ya existe' });
+          admin.username = adminUsername;
+        }
+        const adminPassword = String(body.adminPassword || '').trim();
+        if (adminPassword) {
+          if (adminPassword.length < 3) return json(400, { error: 'La contraseña debe tener al menos 3 caracteres' });
+          admin.password = adminPassword;
+        }
+        admin.name = `Administrador ${name}`;
+        admin.updatedAt = now();
+      }
+      await saveState(state);
+      const base = publicBaseUrl(event);
+      return json(200, { store: { ...store, adminUsername: admin?.username || '', qrUrl: `${base}/turno/${slug}`, tvUrl: `${base}/tv/${slug}`, panelUrl: `${base}/admin/${slug}` } });
     }
 
     if (action === 'store-detail' && method === 'GET') {

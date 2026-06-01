@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import QRCode from 'qrcode';
 import { LogOut, Plus, Monitor, QrCode, Users, Store, Megaphone, CheckCircle2, RotateCcw, SkipForward, Download, Copy, ExternalLink, Maximize2, Wrench, User, Shield, Sparkles, Eye, EyeOff, KeyRound, Printer } from 'lucide-react';
@@ -88,11 +88,46 @@ function SuperAdmin({ user, nav }) {
       <label>Puestos<Input value={form.puestos} onChange={e=>setForm({...form,puestos:e.target.value})} placeholder="A,B,C"/></label>
       <Button><Store size={18}/> Crear estructura completa</Button>
     </form></Card>
-    <Card><h2><Store/> Casas creadas</h2><div className="list">{stores.map(s=><StoreRow key={s.slug} store={s} nav={nav}/>)}</div>{!stores.length && <p className="muted">Todavía no hay casas creadas.</p>}</Card></div>
+    <Card><h2><Store/> Casas creadas</h2><div className="list">{stores.map(s=><StoreRow key={s.slug} store={s} nav={nav} onSaved={(m)=>{setToast(m); load();}}/> )}</div>{!stores.length && <p className="muted">Todavía no hay casas creadas.</p>}</Card></div>
   </Layout>
 }
 
-function StoreRow({store, nav}){ return <div className="store-row"><div><b>{store.name}</b><span>{store.slug}</span></div><div className="row-actions"><Button variant="ghost" onClick={()=>nav(`/admin/${store.slug}`)}>Administrar</Button><Button variant="ghost" onClick={()=>window.open(store.tvUrl || `/tv/${store.slug}`,'_blank')}>TV</Button></div></div> }
+function StoreRow({store, nav, onSaved}){
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    name: store.name || '',
+    address: store.address || '',
+    puestos: (store.puestos || []).join(','),
+    adminUsername: store.adminUsername || '',
+    adminPassword: '',
+  });
+  const [busy, setBusy] = useState(false);
+  async function save(e){
+    e.preventDefault();
+    setBusy(true);
+    try{
+      await api('update-store',{method:'POST',body:{slug:store.slug,...form}});
+      setEditing(false);
+      onSaved?.('Casa actualizada correctamente');
+    }catch(err){ alert(err.message); }
+    finally{ setBusy(false); }
+  }
+  return <div className="store-row editable-store-row">
+    <div className="store-row-top"><div><b>{store.name}</b><span>{store.slug} · Admin: {store.adminUsername || '-'}</span></div><div className="row-actions"><Button variant="ghost" onClick={()=>nav(`/admin/${store.slug}`)}>Administrar</Button><Button variant="ghost" onClick={()=>window.open(store.tvUrl || `/tv/${store.slug}`,'_blank')}>TV</Button><Button variant="secondary" onClick={()=>setEditing(!editing)}>{editing?'Cerrar':'Editar'}</Button></div></div>
+    {editing && <form className="form store-edit-form" onSubmit={save}>
+      <div className="grid two compact-grid">
+        <label>Nombre de la casa<Input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/></label>
+        <label>Dirección<Input value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></label>
+      </div>
+      <label>Mostradores / cajas<Input value={form.puestos} onChange={e=>setForm({...form,puestos:e.target.value})} placeholder="A,B,C"/></label>
+      <div className="grid two compact-grid">
+        <label>Usuario administrador<Input value={form.adminUsername} onChange={e=>setForm({...form,adminUsername:e.target.value})}/></label>
+        <label>Nueva contraseña administrador<PasswordInput value={form.adminPassword} onChange={e=>setForm({...form,adminPassword:e.target.value})} placeholder="Dejar vacío para no cambiar" autoComplete="new-password"/></label>
+      </div>
+      <Button disabled={busy}>{busy ? 'Guardando...' : 'Guardar cambios'}</Button>
+    </form>}
+  </div>
+}
 
 function QRCard({ store }) {
   const [qr, setQr] = useState('');
@@ -247,7 +282,7 @@ function PantallaTV({ slug }) {
   const [voices,setVoices]=useState([]);
   const [audioUnlocked,setAudioUnlocked]=useState(new URLSearchParams(location.search).get('voice') === '1');
   const [overlay,setOverlay]=useState(null);
-  const [lastSpokenId,setLastSpokenId]=useState('');
+  const lastSpokenRef = useRef('');
 
   useEffect(()=>{
     const load=()=>api('public-tickets',{auth:false,query:{slug}}).then(setData).catch(()=>{});
@@ -274,13 +309,15 @@ function PantallaTV({ slug }) {
 
   useEffect(()=>{
     const last=data.lastCalled;
-    if (!last || last.id === lastSpokenId) return;
-    setLastSpokenId(last.id);
+    if (!last) return;
+    const eventKey = `${last.id}-${last.calledAt || ''}`;
+    if (eventKey === lastSpokenRef.current) return;
+    lastSpokenRef.current = eventKey;
     setOverlay(last);
     const closeTimer=setTimeout(()=>setOverlay(null),7200);
     if (data.store?.voice?.enabled && audioUnlocked) speakTicket(last);
     return()=>clearTimeout(closeTimer);
-  },[data.lastCalled, data.store?.voice?.enabled, audioUnlocked, lastSpokenId]);
+  },[data.lastCalled?.id, data.lastCalled?.calledAt, data.store?.voice?.enabled, audioUnlocked]);
 
   function selectedVoice(){ const cfg=data.store?.voice||{}; return voices.find(v=>v.voiceURI===cfg.voiceURI) || voices.find(v=>v.name===cfg.voiceName) || voices.find(v=>v.lang===cfg.lang) || voices.find(v=>/es[-_]?AR/i.test(v.lang)) || voices.find(v=>/^es/i.test(v.lang)) || voices[0]; }
 

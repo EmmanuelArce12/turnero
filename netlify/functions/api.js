@@ -157,7 +157,7 @@ export async function handler(event) {
       const slug = event.queryStringParameters?.slug;
       const store = state.stores.find(s => s.slug === slug && s.active !== false);
       if (!store) return json(404, { error: 'Casa no encontrada' });
-      return json(200, { store: { slug: store.slug, name: store.name, puestos: store.puestos, theme: store.theme } });
+      return json(200, { store: { slug: store.slug, name: store.name, puestos: store.puestos, theme: store.theme, voice: store.voice || {} } });
     }
 
     if (action === 'public-tickets' && method === 'GET') {
@@ -167,7 +167,7 @@ export async function handler(event) {
       const tickets = state.tickets.filter(t => t.storeSlug === slug && t.date === today());
       const called = tickets.filter(t => t.status === 'llamado').sort((a, b) => (b.calledAt || '').localeCompare(a.calledAt || '')).slice(0, 8);
       const pending = tickets.filter(t => t.status === 'pendiente').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, 15);
-      return json(200, { store: { slug: store.slug, name: store.name, theme: store.theme }, called: called.map(visibleTicket), pending: pending.map(visibleTicket), lastCalled: called[0] ? visibleTicket(called[0]) : null });
+      return json(200, { store: { slug: store.slug, name: store.name, theme: store.theme, voice: store.voice || {} }, called: called.map(visibleTicket), pending: pending.map(visibleTicket), lastCalled: called[0] ? visibleTicket(called[0]) : null });
     }
 
     if (action === 'take-ticket' && method === 'POST') {
@@ -219,7 +219,7 @@ export async function handler(event) {
       const adminUsername = String(body.adminUsername || `${slug}_admin`).trim().toLowerCase();
       const adminPassword = String(body.adminPassword || Math.random().toString(36).slice(2, 10)).trim();
       if (state.users.some(u => u.username.toLowerCase() === adminUsername.toLowerCase())) return json(400, { error: 'Ese usuario admin ya existe' });
-      const store = { id: id('store'), name, slug, address: String(body.address || '').trim(), active: true, puestos, counterParticular: 0, counterMecanico: 0, counterRetiro: 0, lastResetDate: today(), theme: { accent: body.accent || '#111827' }, createdAt: now() };
+      const store = { id: id('store'), name, slug, address: String(body.address || '').trim(), active: true, puestos, counterParticular: 0, counterMecanico: 0, counterRetiro: 0, lastResetDate: today(), theme: { accent: body.accent || '#111827' }, voice: { enabled: false, voiceURI: '', voiceName: '', lang: 'es-AR', rate: 0.88, pitch: 1.02, volume: 1 }, createdAt: now() };
       state.stores.push(store);
       state.users.push({ id: id('user'), username: adminUsername, password: adminPassword, name: `Administrador ${name}`, role: 'admin_casa', storeSlug: slug, active: true, puesto: puestos[0] || 'A', createdAt: now() });
       await saveState(state);
@@ -265,6 +265,25 @@ export async function handler(event) {
       target.updatedAt = now();
       await saveState(state);
       return json(200, { ok: true, user: { ...target, password: undefined } });
+    }
+
+
+    if (action === 'update-voice-settings' && method === 'POST') {
+      const slug = body.slug || user.storeSlug;
+      const store = storeForUser(state, slug, user);
+      requireRole(user, ['super_admin', 'admin_casa']);
+      store.voice = {
+        enabled: Boolean(body.enabled),
+        voiceURI: String(body.voiceURI || ''),
+        voiceName: String(body.voiceName || ''),
+        lang: String(body.lang || 'es-AR'),
+        rate: Number(body.rate || 0.88),
+        pitch: Number(body.pitch || 1.02),
+        volume: Number(body.volume || 1),
+        updatedAt: now(),
+      };
+      await saveState(state);
+      return json(200, { ok: true, voice: store.voice });
     }
 
     if (action === 'tickets' && method === 'GET') {

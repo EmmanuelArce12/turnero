@@ -126,6 +126,65 @@ function VendorPasswordEditor({ vendor, slug, onSaved }) {
   </div>
 }
 
+
+function VoiceSettingsCard({ store, slug, onSaved }) {
+  const saved = store?.voice || {};
+  const [enabled, setEnabled] = useState(Boolean(saved.enabled));
+  const [voices, setVoices] = useState([]);
+  const [voiceURI, setVoiceURI] = useState(saved.voiceURI || '');
+  const [rate, setRate] = useState(Number(saved.rate || 0.88));
+  const [pitch, setPitch] = useState(Number(saved.pitch || 1.02));
+
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    const loadVoices = () => {
+      const list = window.speechSynthesis.getVoices();
+      setVoices(list);
+      if (!voiceURI && list.length) {
+        const preferred = list.find(v=>/es[-_]?AR/i.test(v.lang)) || list.find(v=>/^es/i.test(v.lang)) || list[0];
+        if (preferred) setVoiceURI(preferred.voiceURI);
+      }
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, [voiceURI]);
+
+  function selectedVoice() {
+    return voices.find(v=>v.voiceURI===voiceURI) || voices.find(v=>/es[-_]?AR/i.test(v.lang)) || voices.find(v=>/^es/i.test(v.lang)) || voices[0];
+  }
+
+  function speakSample() {
+    if (!('speechSynthesis' in window)) return alert('Este navegador no tiene voces disponibles');
+    const v = selectedVoice();
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance('Marcos, acercarse al mostrador A');
+    if (v) utter.voice = v;
+    utter.lang = v?.lang || 'es-AR';
+    utter.rate = rate;
+    utter.pitch = pitch;
+    utter.volume = 1;
+    window.speechSynthesis.speak(utter);
+  }
+
+  async function save() {
+    const v = selectedVoice();
+    await api('update-voice-settings', { method:'POST', body:{ slug, enabled, voiceURI: v?.voiceURI || voiceURI, voiceName: v?.name || '', lang: v?.lang || 'es-AR', rate, pitch, volume: 1 } });
+    onSaved?.('Configuración de voz guardada');
+  }
+
+  return <Card><h2>🔊 Configuración de voz TV</h2><p className="muted">Desde acá configurás la voz. En la pantalla TV no se muestran botones: solo funciona con esta configuración.</p>
+    <div className="voice-admin-grid">
+      <label className="checkline"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/> Activar voz en la TV</label>
+      <label>Voz<Select value={voiceURI} onChange={e=>setVoiceURI(e.target.value)}>{voices.length ? voices.map(v=><option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>) : <option>No se detectaron voces en este navegador</option>}</Select></label>
+      <label>Velocidad<Select value={String(rate)} onChange={e=>setRate(Number(e.target.value))}><option value="0.75">Lenta</option><option value="0.88">Normal</option><option value="1">Rápida</option></Select></label>
+      <label>Tono<Select value={String(pitch)} onChange={e=>setPitch(Number(e.target.value))}><option value="0.9">Grave</option><option value="1.02">Normal</option><option value="1.15">Aguda</option></Select></label>
+    </div>
+    <div className="actions"><Button variant="secondary" onClick={speakSample}>Probar voz</Button><Button onClick={save}>Guardar configuración</Button></div>
+    <p className="muted small-note">Nota: si el navegador de la TV bloquea el audio automático, abrí la pantalla TV desde el botón de abajo o tocá una vez la pantalla TV al iniciar.</p>
+  </Card>
+}
+
 function AdminCasa({ user, nav, slug }) {
   const [data, setData] = useState(null); const [toast,setToast]=useState('');
   const [vendor,setVendor]=useState({username:'',password:'',name:'',puesto:'A'});
@@ -145,7 +204,8 @@ function AdminCasa({ user, nav, slug }) {
     </form></Card></div>
     <div className="grid two"><Card><h2>Usuarios de esta casa</h2><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Puesto</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.name}</td><td>{u.username}</td><td>{u.role}</td><td>{u.puesto||'-'}</td></tr>)}</tbody></table></Card>
     <Card><h2><KeyRound/> Cambiar clave de vendedores</h2><p className="muted">El administrador puede modificar la contraseña de cada vendedor desde acá.</p><div className="password-list">{users.filter(u=>u.role==='vendedor').map(u=><div className="password-row" key={u.id}><div><b>{u.name}</b><span>{u.username} · Puesto {u.puesto || '-'}</span></div><VendorPasswordEditor vendor={u} slug={slug} onSaved={(m)=>setToast(m)} /></div>)}{!users.some(u=>u.role==='vendedor') && <p className="muted">Todavía no hay vendedores creados.</p>}</div></Card></div>
-    <Card><h2>Accesos rápidos</h2><div className="big-actions"><Button onClick={()=>nav(`/panel/${slug}`)}><Megaphone/> Panel vendedor</Button><Button variant="secondary" onClick={()=>window.open(`/tv/${slug}`,'_blank')}><Monitor/> Pantalla TV</Button><Button variant="danger" onClick={reset}><RotateCcw/> Reiniciar día</Button></div></Card>
+    <VoiceSettingsCard store={store} slug={slug} onSaved={(m)=>setToast(m)} />
+    <Card><h2>Accesos rápidos</h2><div className="big-actions"><Button onClick={()=>nav(`/panel/${slug}`)}><Megaphone/> Panel vendedor</Button><Button variant="secondary" onClick={()=>window.open(`/tv/${slug}?voice=1`,'_blank')}><Monitor/> Abrir TV con voz</Button><Button variant="danger" onClick={reset}><RotateCcw/> Reiniciar día</Button></div></Card>
   </Layout>
 }
 
@@ -183,9 +243,94 @@ function TurnoCliente({ slug }) {
 
 function PantallaTV({ slug }) {
   const [data,setData]=useState({called:[],pending:[],lastCalled:null,store:null});
-  useEffect(()=>{ const load=()=>api('public-tickets',{auth:false,query:{slug}}).then(setData).catch(()=>{}); load(); const i=setInterval(load,2000); return()=>clearInterval(i); },[slug]);
+  const [time,setTime]=useState(new Date());
+  const [voices,setVoices]=useState([]);
+  const [audioUnlocked,setAudioUnlocked]=useState(new URLSearchParams(location.search).get('voice') === '1');
+  const [overlay,setOverlay]=useState(null);
+  const [lastSpokenId,setLastSpokenId]=useState('');
+
+  useEffect(()=>{
+    const load=()=>api('public-tickets',{auth:false,query:{slug}}).then(setData).catch(()=>{});
+    load();
+    const i=setInterval(load,2000);
+    return()=>clearInterval(i);
+  },[slug]);
+
+  useEffect(()=>{
+    const t=setInterval(()=>setTime(new Date()),1000);
+    return()=>clearInterval(t);
+  },[]);
+
+  useEffect(()=>{
+    if (!('speechSynthesis' in window)) return;
+    const loadVoices=()=>setVoices(window.speechSynthesis.getVoices());
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    const unlock = () => setAudioUnlocked(true);
+    window.addEventListener('click', unlock, { once:true });
+    window.addEventListener('touchstart', unlock, { once:true });
+    return()=>{ window.speechSynthesis.onvoiceschanged = null; window.removeEventListener('click', unlock); window.removeEventListener('touchstart', unlock); };
+  },[]);
+
+  useEffect(()=>{
+    const last=data.lastCalled;
+    if (!last || last.id === lastSpokenId) return;
+    setLastSpokenId(last.id);
+    setOverlay(last);
+    const closeTimer=setTimeout(()=>setOverlay(null),7200);
+    if (data.store?.voice?.enabled && audioUnlocked) speakTicket(last);
+    return()=>clearTimeout(closeTimer);
+  },[data.lastCalled, data.store?.voice?.enabled, audioUnlocked, lastSpokenId]);
+
+  function selectedVoice(){ const cfg=data.store?.voice||{}; return voices.find(v=>v.voiceURI===cfg.voiceURI) || voices.find(v=>v.name===cfg.voiceName) || voices.find(v=>v.lang===cfg.lang) || voices.find(v=>/es[-_]?AR/i.test(v.lang)) || voices.find(v=>/^es/i.test(v.lang)) || voices[0]; }
+
+  function speakTicket(ticket){
+    if (!('speechSynthesis' in window) || !ticket) return;
+    const msg = `${ticket.name}, acercarse al mostrador ${ticket.puesto || ''}`;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(msg);
+    const v = selectedVoice();
+    if (v) utter.voice = v;
+    utter.lang = v?.lang || 'es-AR';
+    const cfg=data.store?.voice||{};
+    utter.rate = Number(cfg.rate || 0.88);
+    utter.pitch = Number(cfg.pitch || 1.02);
+    utter.volume = Number(cfg.volume || 1);
+    window.speechSynthesis.speak(utter);
+  }
+
+
   const last=data.lastCalled;
-  return <div className="tv-page"><div className="tv-top"><h1>{data.store?.name || 'Turnero'}</h1><span>{new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</span></div><div className="tv-grid"><section className="tv-last"><p>Último llamado</p>{last ? <><h2>{last.code}</h2><h3>{last.name}</h3><div>Puesto {last.puesto || '-'}</div><Pill>{ticketLabel(last.type)}</Pill></> : <h3>Aguardando turnos</h3>}</section><section className="tv-table"><h2>Turnos llamados</h2><table><thead><tr><th>Turno</th><th>Nombre</th><th>Puesto</th><th>Atención</th></tr></thead><tbody>{data.called.map(t=><tr key={t.id}><td>{t.code}</td><td>{t.name}</td><td>{t.puesto}</td><td>{ticketLabel(t.type)}</td></tr>)}</tbody></table></section></div></div>
+  const recent=(data.called||[]).slice(0,8);
+  return <div className="tv-page enhanced-tv">
+    {overlay && <div className="tv-overlay-call">
+      <div className="pulse-ring"></div>
+      <div className="overlay-card">
+        <span className="overlay-label">Nuevo llamado</span>
+        <h1>{overlay.code}</h1>
+        <h2>{overlay.name}</h2>
+        <p>Acercarse al mostrador <b>{overlay.puesto || '-'}</b></p>
+        <Pill>{ticketLabel(overlay.type)}</Pill>
+      </div>
+    </div>}
+
+    <div className="tv-top">
+      <h1>{data.store?.name || 'Turnero'}</h1>
+      <div className="tv-clock-wrap">
+        <span>{time.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</span>
+      </div>
+    </div>
+
+    <div className="tv-grid">
+      <section className="tv-last">
+        <p>Último llamado</p>{last ? <><h2>{last.code}</h2><h3>{last.name}</h3><div>Puesto {last.puesto || '-'}</div><Pill>{ticketLabel(last.type)}</Pill></> : <h3>Aguardando turnos</h3>}
+      </section>
+      <section className="tv-table">
+        <h2>Turnos llamados</h2>
+        <table><thead><tr><th>Turno</th><th>Nombre</th><th>Puesto</th><th>Atención</th></tr></thead><tbody>{recent.map(t=><tr key={t.id}><td>{t.code}</td><td>{t.name}</td><td>{t.puesto}</td><td>{ticketLabel(t.type)}</td></tr>)}</tbody></table>
+      </section>
+    </div>
+  </div>
 }
 
 function App(){ const [path,nav]=usePath(); const [user,setUser]=useState(null); const parts=path.split('/').filter(Boolean); useEffect(()=>{ if(getToken()) api('me').then(d=>setUser(d.user)).catch(()=>{}); },[]);
